@@ -1,0 +1,15 @@
+# Binary
+kasir-api
+
+# Git
+.git
+.gitignore
+
+# IDE
+.idea
+.vscode
+*.swp
+
+# Docker
+Dockerfile
+.dockerignore
