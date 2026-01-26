@@ -23,8 +23,11 @@ WORKDIR /app
 # Copy the binary from builder
 COPY --from=builder /app/kasir-api .
 
+# Set port for Easypanel
+ENV PORT=80
+
 # Expose port
-EXPOSE 8082
+EXPOSE 80
 
 # Run the binary
 CMD ["./kasir-api"]
