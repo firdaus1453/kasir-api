@@ -1,0 +1,455 @@
+## Config
+
+config itu adalah setting yang bisa kita sesuaikan tanpa mengubah mesin atau logic. misalkan saya punya vscode ak setting gelap mungkin dilaptop saya yang lain saya setting jadi putih, sama-sama vscode tapi dibedain setting nya. 
+
+Nah kali ini kita akan pakai viper dari golang <https://github.com/spf13/viper>, karena ini library config di golang yang sangat populer, kenapa. karena sangat lengkap. 
+
+Kita mulai dengan ganti port kita ke setting / config, karena ketika deploy misalkan kita mau beda port, tinggal ganti confignya
+
+Caranya:
+
+
+1. Kita install dulu Viper dengan cara `go get ``<https://github.com/spf13/viper>`
+2. kemudian di `main.go` kita define dulu config di dalam tipe data, kita namai Config isinya adalah PORT
+
+```javascript
+type Config struct {
+	Port    string `mapstructure:"PORT"`
+}
+```
+
+disini kita define juga tag `mapstructure:"PORT”`, yang artinya kalau config ini diambil dengan viper dia perlu PORT 
+
+
+3. kita butuh bikin `.env` yang bakal dipakai viper buat define confignya
+
+```javascript
+PORT=8080
+```
+
+  4. Karena kita udah define .env, kita butuh baca .env dengan viper caranya
+
+```javascript
+viper.AutomaticEnv()
+viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+
+if _, err := os.Stat(".env"); err == nil {
+	viper.SetConfigFile(".env")
+	_ = viper.ReadInConfig()
+}
+```
+
+
+5. Selanjutnya kita bisa ambil config kita dari viper dengan cara kita define dulu variablenya dan kita assign ke environment nya
+
+```javascript
+config := Config{
+ 	Port: viper.GetString("PORT"),
+}
+```
+
+
+6. Kita implement config ke dalam server load kita dengan edit line ini
+
+   ```javascript
+   addr := "0.0.0.0:" + config.Port
+   fmt.Println("Server running di", addr)
+   
+   err = http.ListenAndServe(addr, nil)
+   if err != nil {
+   	fmt.Println("gagal running server", err)
+   }
+   ```
+
+## Implement Database
+
+**database/database.go**
+
+```go
+package database
+
+import (
+	"database/sql"
+	"log"
+
+	_ "github.com/lib/pq"
+)
+
+func InitDB(connectionString string) (*sql.DB, error) {
+	// Open database
+	db, err := sql.Open("postgres", connectionString)
+	if err != nil {
+		return nil, err
+	}
+
+	// Test connection
+	err = db.Ping()
+	if err != nil {
+		return nil, err
+	}
+
+	// Set connection pool settings (optional tapi recommended)
+	db.SetMaxOpenConns(25)
+	db.SetMaxIdleConns(5)
+
+	log.Println("Database connected successfully")
+	return db, nil
+}
+```
+
+**main.go**
+
+```go
+// ubah Config
+type Config struct {
+	Port   string `mapstructure:"PORT"`
+	DBConn string `mapstructure:"DB_CONN"`
+}
+
+config := Config{
+		Port:   viper.GetString("PORT"),
+		DBConn: viper.GetString("DB_CONN"),
+}
+
+// Setup database
+	db, err := database.InitDB(config.DBConn)
+	if err != nil {
+		log.Fatal("Failed to initialize database:", err)
+	}
+	defer db.Close()
+```
+
+## Pindah Model
+
+**model/product.go**
+
+```javascript
+package models
+
+type Product struct {
+	ID    int    `json:"id"`
+	Name  string `json:"name"`
+	Price int    `json:"price"`
+	Stock int    `json:"stock"`
+}
+```
+
+## Pindah Handler
+
+**handlers/product_handler.go**
+
+```go
+package handlers
+
+import (
+	"encoding/json"
+	"kasir-api/models"
+	"kasir-api/services"
+	"net/http"
+	"strconv"
+	"strings"
+)
+
+type ProductHandler struct {
+	service *services.ProductService
+}
+
+func NewProductHandler(service *services.ProductService) *ProductHandler {
+	return &ProductHandler{service: service}
+}
+
+// HandleProducts - GET /api/produk
+func (h *ProductHandler) HandleProducts(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		h.GetAll(w, r)
+	case http.MethodPost:
+		h.Create(w, r)
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (h *ProductHandler) GetAll(w http.ResponseWriter, r *http.Request) {
+	products, err := h.service.GetAll()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(products)
+}
+
+func (h *ProductHandler) Create(w http.ResponseWriter, r *http.Request) {
+	var product models.Product
+	err := json.NewDecoder(r.Body).Decode(&product)
+	if err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	err = h.service.Create(&product)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(product)
+}
+
+// HandleProductByID - GET/PUT/DELETE /api/produk/{id}
+func (h *ProductHandler) HandleProductByID(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		h.GetByID(w, r)
+	case http.MethodPut:
+		h.Update(w, r)
+	case http.MethodDelete:
+		h.Delete(w, r)
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// GetByID - GET /api/produk/{id}
+func (h *ProductHandler) GetByID(w http.ResponseWriter, r *http.Request) {
+	idStr := strings.TrimPrefix(r.URL.Path, "/api/produk/")
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		http.Error(w, "Invalid product ID", http.StatusBadRequest)
+		return
+	}
+
+	product, err := h.service.GetByID(id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(product)
+}
+
+func (h *ProductHandler) Update(w http.ResponseWriter, r *http.Request) {
+	idStr := strings.TrimPrefix(r.URL.Path, "/api/produk/")
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		http.Error(w, "Invalid product ID", http.StatusBadRequest)
+		return
+	}
+
+	var product models.Product
+	err = json.NewDecoder(r.Body).Decode(&product)
+	if err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	product.ID = id
+	err = h.service.Update(&product)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(product)
+}
+
+// Delete - DELETE /api/produk/{id}
+func (h *ProductHandler) Delete(w http.ResponseWriter, r *http.Request) {
+	idStr := strings.TrimPrefix(r.URL.Path, "/api/produk/")
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		http.Error(w, "Invalid product ID", http.StatusBadRequest)
+		return
+	}
+
+	err = h.service.Delete(id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"message": "Product deleted successfully",
+	})
+}
+
+```
+
+Define route di **main.go**
+
+```go
+// Setup routes
+http.HandleFunc("/api/produk", productHandler.HandleProducts)
+http.HandleFunc("/api/produk/", productHandler.HandleProductByID)
+```
+
+## Pindah Service
+
+**sevices/product_service.go**
+
+```javascript
+package services
+
+import (
+	"kasir-api/models"
+	"kasir-api/repositories"
+)
+
+type ProductService struct {
+	repo *repositories.ProductRepository
+}
+
+func NewProductService(repo *repositories.ProductRepository) *ProductService {
+	return &ProductService{repo: repo}
+}
+
+func (s *ProductService) GetAll() ([]models.Product, error) {
+	return s.repo.GetAll()
+}
+
+func (s *ProductService) Create(data *models.Product) error {
+	return s.repo.Create(data)
+}
+
+func (s *ProductService) GetByID(id int) (*models.Product, error) {
+	return s.repo.GetByID(id)
+}
+
+func (s *ProductService) Update(product *models.Product) error {
+	return s.repo.Update(product)
+}
+
+func (s *ProductService) Delete(id int) error {
+	return s.repo.Delete(id)
+}
+```
+
+## Pindah Repository
+
+**repositories/product_repository.go**
+
+```javascript
+package repositories
+
+import (
+	"database/sql"
+	"errors"
+	"kasir-api/models"
+)
+
+type ProductRepository struct {
+	db *sql.DB
+}
+
+func NewProductRepository(db *sql.DB) *ProductRepository {
+	return &ProductRepository{db: db}
+}
+
+func (repo *ProductRepository) GetAll() ([]models.Product, error) {
+	query := "SELECT id, name, price, stock FROM products"
+	rows, err := repo.db.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	products := make([]models.Product, 0)
+	for rows.Next() {
+		var p models.Product
+		err := rows.Scan(&p.ID, &p.Name, &p.Price, &p.Stock)
+		if err != nil {
+			return nil, err
+		}
+		products = append(products, p)
+	}
+
+	return products, nil
+}
+
+func (repo *ProductRepository) Create(product *models.Product) error {
+	query := "INSERT INTO products (name, price, stock) VALUES ($1, $2, $3) RETURNING id"
+	err := repo.db.QueryRow(query, product.Name, product.Price, product.Stock).Scan(&product.ID)
+	return err
+}
+
+// GetByID - ambil produk by ID
+func (repo *ProductRepository) GetByID(id int) (*models.Product, error) {
+	query := "SELECT id, name, price, stock FROM products WHERE id = $1"
+
+	var p models.Product
+	err := repo.db.QueryRow(query, id).Scan(&p.ID, &p.Name, &p.Price, &p.Stock)
+	if err == sql.ErrNoRows {
+		return nil, errors.New("produk tidak ditemukan")
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	return &p, nil
+}
+
+func (repo *ProductRepository) Update(product *models.Product) error {
+	query := "UPDATE products SET name = $1, price = $2, stock = $3 WHERE id = $4"
+	result, err := repo.db.Exec(query, product.Name, product.Price, product.Stock, product.ID)
+	if err != nil {
+		return err
+	}
+
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+
+	if rows == 0 {
+		return errors.New("produk tidak ditemukan")
+	}
+
+	return nil
+}
+
+func (repo *ProductRepository) Delete(id int) error {
+	query := "DELETE FROM products WHERE id = $1"
+	result, err := repo.db.Exec(query, id)
+	if err != nil {
+		return err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+
+	if rows == 0 {
+		return errors.New("produk tidak ditemukan")
+	}
+
+	return err
+}
+```
+
+## Dependency Injection
+
+**main.go**
+
+```go
+productRepo := repositories.NewProductRepository(db)
+productService := services.NewProductService(productRepo)
+productHandler := handlers.NewProductHandler(productService)
+```
+
+Push code ke github
+
+```javascript
+git add .
+git commit -m "layered arch, env, database"
+git push
+```
+
+Supabase :
+postgresql://postgres.cftusgkctdnypeexcxrg:kasir-api123@aws-1-ap-south-1.pooler.supabase.com:6543/postgres
