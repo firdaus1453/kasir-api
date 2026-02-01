@@ -8,6 +8,7 @@ import (
 	_ "github.com/lib/pq"
 )
 
+func InitDB(connectionString string) (*sql.DB, error) {
     // Fallback: Switch to port 5432 and force SSL if 6543 fails
     connectionString = strings.Replace(connectionString, ":6543", ":5432", 1)
 
