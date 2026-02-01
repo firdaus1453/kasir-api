@@ -9,9 +9,6 @@ import (
 )
 
 func InitDB(connectionString string) (*sql.DB, error) {
-    // Fallback: Switch to port 5432 and force SSL if 6543 fails
-    connectionString = strings.Replace(connectionString, ":6543", ":5432", 1)
-
     if !strings.Contains(connectionString, "sslmode=") {
         if strings.Contains(connectionString, "?") {
             connectionString += "&sslmode=require"
