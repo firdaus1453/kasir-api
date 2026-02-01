@@ -9,8 +9,12 @@ import (
 )
 
 func InitDB(connectionString string) (*sql.DB, error) {
+	// Force use of Port 5432 (Session connection) instead of 6543 (Transaction pooler)
+	// This fixes EOF errors caused by Pooler incompatibilities in container environments.
+	connectionString = strings.Replace(connectionString, ":6543", ":5432", 1)
+
     if !strings.Contains(connectionString, "sslmode=") {
-        if strings.Contains(connectionString, "?") {
+         if strings.Contains(connectionString, "?") {
             connectionString += "&sslmode=require"
         } else {
             connectionString += "?sslmode=require"
