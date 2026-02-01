@@ -11,9 +11,9 @@ import (
 func InitDB(connectionString string) (*sql.DB, error) {
     if !strings.Contains(connectionString, "sslmode=") {
         if strings.Contains(connectionString, "?") {
-            connectionString += "&sslmode=require"
+            connectionString += "&sslmode=disable"
         } else {
-            connectionString += "?sslmode=require"
+            connectionString += "?sslmode=disable"
         }
     }
 
