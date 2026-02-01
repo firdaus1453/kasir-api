@@ -13,3 +13,4 @@ kasir-api
 # Docker
 Dockerfile
 .dockerignore
+.env
