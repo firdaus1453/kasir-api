@@ -18,6 +18,9 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o kasir-api .
 # Final stage
 FROM alpine:latest
 
+# Install certificates and timezone
+RUN apk --no-cache add ca-certificates tzdata
+
 WORKDIR /app
 
 # Copy the binary from builder
