@@ -5,7 +5,7 @@ BASE_URL="http://localhost:8080/api/produk"
 echo "1. Testing Create Product..."
 CREATE_RES=$(curl -s -X POST $BASE_URL \
   -H "Content-Type: application/json" \
-  -d '{"name": "Test Product", "price": 10000, "stock": 50}')
+  -d '{"name": "Test Product", "price": 10000, "stock": 50, "category_id": 1}')
 echo "Response: $CREATE_RES"
 
 ID=$(echo $CREATE_RES | grep -o '"id":[0-9]*' | grep -o '[0-9]*')
@@ -29,7 +29,7 @@ echo ""
 echo "4. Testing Update Product ($ID)..."
 curl -s -X PUT "$BASE_URL/$ID" \
   -H "Content-Type: application/json" \
-  -d '{"name": "Updated Product", "price": 15000, "stock": 40}'
+  -d '{"name": "Updated Product", "price": 15000, "stock": 40, "category_id": 2}'
 echo ""
 echo ""
 
